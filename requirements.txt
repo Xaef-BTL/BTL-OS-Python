@@ -1,0 +1,6 @@
+Pillow
+psutil
+pygame
+python-vlc
+PyQt6
+PyQt6-WebEngine
