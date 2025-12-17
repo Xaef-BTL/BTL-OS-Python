@@ -1,18 +1,24 @@
-What's new in BTL 4.4?
-/* Copyright Xaef-BTL 2025. All rights reserved */
-We removed the boring, space-taking bottom bar in Lightning Browser to provide a clean and wide view, added tab management, devtools, and a search bar. Performance also increased by 20%.
-We touched up the Snake Game to give it a bit of a retro feel.
-**So what’s coming very soon?**
+What's new in BTL 4.4 Ultra?
 
 
-BTL antivirus (BTLguard) will be added,
+
+We know you’re tired of that ridiculous Lightning Browser in HTML5-powered BTL 4.3. Many users complained that the thick status bar at the bottom almost completely blocked the site view. With the latest build of 4.3, we’ve ditched Lightning Browser 2 and upgraded to 2.1 . Here’s what makes Lightning Browser 2.1 great:
+
+/*
+We removed all the unnecessary stuff.
+Added an in-page search bar.
+Slimmed down the status bar to give full site visibility.
+Added tab management.
+Performance improved by 15%.
+DevTools included.
+*/
+We improved the Snake game, gave it a retro feel, and now you start the game by pressing R when you enter Snake.
+For the Ball Catch game, it had stayed the same for a long time, so we gave it a little refresh and made it more fun.
+And we added a Chess game. Sometimes the chess bot makes ridiculous moves, but it still works 😅 Anyway, to play Chess, type Chess in the BTL Start menu and click on BTL Chess.
+
+We added Log on screen.
+
+(Warning: BTL is still a work-in-progress system, and if minor bugs occur, please submit an issue or a pull request on GitHub.)
 
 
-Code editor will be added,
-
-
-The Start menu will become more advanced and modern,
-
-
-And User management + Login screen will be added.
-
+Thank you for choosing BTL.
