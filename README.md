@@ -1,32 +1,47 @@
-BTLv4.3 – Python OS Simulation
+# BTLv4.4 – Python OS Simulation
 
-Short Description
+## Short Description
 
-BTLv4.3 is a Tkinter-based desktop simulation / operating system game. It includes mini-apps, games, and media support, allowing you to experience a Python-based “OS adventure.”
+BTLv4.4 is a Tkinter-based desktop simulation / operating system game written in Python.  
+It provides a lightweight “OS-like” experience with mini applications, games, and media support.
 
-Features
+---
 
-File manager, recycle bin, and simulated registry and... MOREEEE!!!!
+## Features
 
-Mini-games: Snake, Ball Game, “Save Maria” and MORE!
+### Core System
+- Desktop environment built with Tkinter
+- Window management (move, minimize, close)
+- Taskbar and desktop icons
+- File Manager with simulated file system
+- Recycle Bin support
+- Simulated Registry system
 
-Media playback support (Pygame, VLC)
+### Applications & Games
+- Mini-games: Snake, Ball Game, Save Maria, and more
+- Built-in apps: Notepad, Paint, Calculator
+- Plugin-style structure for adding new apps easily
 
-Customizable GUI and icons
+### Media Support
+- Audio playback using Pygame
+- Video playback support (VLC integration)
+- Image and basic media viewer
 
-Simple yet fun, open for community contributions
+### Customization
+- Custom icons and wallpapers
+- Theme and color customization
+- Configurable shortcuts
 
-Installation
-git clone https://github.com/Xaef-BTL/BTL
-cd BTL
-python BTLv.4.3Professional.py
+### Open Source
+- Community-driven development
+- Easy to extend and modify
+- Beginner-friendly code structure
 
-Contributing
+---
 
-We welcome contributions!
+## Installation
 
-Check open issues labeled good first issue
-
-Fork the repo and submit a pull request
-
-Follow the code style and guidelines in CONTRIBUTING.md
+```bash
+git clone https://github.com/Xaef-BTL/BTL-OS-Python
+cd BTL-OS-Python
+python BTLv4.4Ultimate.py
