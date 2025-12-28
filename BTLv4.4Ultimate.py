@@ -720,13 +720,6 @@ def try_startup_music():
 root.after(1500, try_startup_music)
 
 
-# Winamp tam yolu
-WINAMP_PATH = Path(r"C:\Program Files (x86)\Winamp\winamp.exe")
-
-
-def open_winamp():
-    (r"C:\Program Files (x86)\Winamp\winamp.exe")
-
 
 # ---------- Arkaplan (wallpaper) ----------
 WALLPAPER_PATH = os.path.join(BASE_DIR, "wallpaper2.png")
@@ -4258,6 +4251,378 @@ def open_ball_game():
     # topa başlangıç pozisyonu (merkez)
     set_ball_center(WINDOW_W/2, (WINDOW_H-80)/2, BALL_INITIAL_SIZE)
 
+# SarmaBot_Toplevel.py
+# SarmaBot'u bir Tkinter Toplevel içine gömen tek dosyalık uygulama.
+# - 500 programatik komut (cmd1..cmd500)
+# - Türkçe/İngilizce tespit
+# - Güvenli hesaplama (AST tabanlı)
+# - Toplevel içinde sohbet arayüzü (giriş, gönder, kaydırılabilir metin)
+#
+# Çalıştır: python SarmaBot_Toplevel.py
+
+import ast
+import math
+import operator
+import random
+import re
+import sys
+import tkinter as tk
+from tkinter import ttk
+from tkinter.scrolledtext import ScrolledText
+from datetime import datetime
+
+# -------------------------
+# Güvenli hesaplama (safe_eval)
+# -------------------------
+ALLOWED_FUNCS = {name: getattr(math, name) for name in dir(math) if not name.startswith("__")}
+ALLOWED_FUNCS.update({"abs": abs, "round": round, "min": min, "max": max})
+ALLOWED_NAMES = set(ALLOWED_FUNCS.keys()) | {"pi", "e"}
+
+
+def safe_eval(expr: str):
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except Exception as e:
+        raise ValueError("Ifade parse edilemedi: " + str(e))
+
+    def _check(node):
+        if isinstance(node, ast.Expression):
+            return _check(node.body)
+        if isinstance(node, ast.BinOp):
+            if not isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.FloorDiv)):
+                raise ValueError("İzin verilmeyen işlem: " + str(node.op))
+            _check(node.left)
+            _check(node.right)
+            return True
+        if isinstance(node, ast.UnaryOp):
+            if not isinstance(node.op, (ast.UAdd, ast.USub)):
+                raise ValueError("İzin verilmeyen unary op")
+            return _check(node.operand)
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name):
+                raise ValueError("Sadece isimli fonksiyon çağrılabilir")
+            fname = node.func.id
+            if fname not in ALLOWED_FUNCS:
+                raise ValueError(f"İzin verilmeyen fonksiyon: {fname}")
+            for a in node.args:
+                _check(a)
+            return True
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (int, float)):
+                return True
+            raise ValueError("Sadece sayısal sabitlere izin var")
+        if isinstance(node, ast.Name):
+            if node.id in ALLOWED_NAMES:
+                return True
+            raise ValueError(f"İzin verilmeyen isim: {node.id}")
+        if isinstance(node, ast.Tuple):
+            for elt in node.elts:
+                _check(elt)
+            return True
+        raise ValueError("İzin verilmeyen ifade kısmı: " + node.__class__.__name__)
+
+    _check(tree)
+    safe_globals = {"__builtins__": {}}
+    safe_globals.update(ALLOWED_FUNCS)
+    return eval(compile(tree, filename="<safe>", mode="eval"), safe_globals, {})
+
+# -------------------------
+# Matematik yardımcıları
+# -------------------------
+
+def is_prime(n: int):
+    if n <= 1:
+        return False
+    if n <= 3:
+        return True
+    if n % 2 == 0:
+        return False
+    r = int(n**0.5) + 1
+    for i in range(3, r, 2):
+        if n % i == 0:
+            return False
+    return True
+
+
+def lcm(a: int, b: int):
+    return abs(a*b) // math.gcd(a, b) if a and b else 0
+
+# -------------------------
+# Komut sistemi
+# -------------------------
+class Command:
+    def __init__(self, name, aliases, desc, handler):
+        self.name = name
+        self.aliases = set([name] + aliases)
+        self.desc = desc
+        self.handler = handler
+
+COMMANDS = {}
+
+def register(cmd: Command):
+    for alias in cmd.aliases:
+        COMMANDS[alias] = cmd
+    return cmd
+
+# Temel komutlar
+
+def cmd_help(args, lang):
+    if not args:
+        keys = sorted({c.name for c in COMMANDS.values()})
+        return {
+            "tr": "Kullanılabilir komutlar (kısa): " + ", ".join(keys[:40]) + f" ... (toplam {len(keys)} komut)",
+            "en": "Available commands (short): " + ", ".join(keys[:40]) + f" ... (total {len(keys)} commands)"
+        }[lang]
+    else:
+        name = args[0].lower()
+        cmd = COMMANDS.get(name)
+        if not cmd:
+            return {"tr": "Bilinmeyen komut: " + name, "en": "Unknown command: " + name}[lang]
+        return {"tr": f"{cmd.name} - {cmd.desc}", "en": f"{cmd.name} - {cmd.desc}"}[lang]
+
+register(Command("help", ["yardim", "yardım", "help"], "Show help. / Yardım gösterir.", lambda a, l: cmd_help(a, l)))
+register(Command("ping", ["ping"], "Check latency / pong.", lambda a, l: {"tr":"pong","en":"pong"}[l]))
+register(Command("time", ["zaman", "time"], "Shows current time.", lambda a, l: {"tr":f"Şu an: {datetime.now()}","en":f"Now: {datetime.now()}"}[l]))
+
+# calc / hesapla
+
+def cmd_calc(args, lang):
+    if not args:
+        return {"tr":"Kullanım: calc <ifade>  Ör: calc 2+2*3","en":"Usage: calc <expression>  e.g. calc 2+2*3"}[lang]
+    expr = " ".join(args)
+    try:
+        result = safe_eval(expr)
+        return {"tr": f"Sonuç: {result}", "en": f"Result: {result}"}[lang]
+    except Exception as e:
+        return {"tr": "Hesaplama hatası: " + str(e), "en": "Calculation error: " + str(e)}[lang]
+
+register(Command("calc", ["hesapla", "calculate"], "Evaluate math expressions safely. / Matematik ifadelerini güvenli değerlendirir.", lambda a, l: cmd_calc(a, l)))
+
+# gcd / ebob
+
+def cmd_gcd(args, lang):
+    if len(args) < 2:
+        return {"tr":"Kullanım: gcd a b", "en":"Usage: gcd a b"}[lang]
+    try:
+        a = int(args[0]); b = int(args[1])
+    except:
+        return {"tr":"Sayı giriniz", "en":"Please enter integers"}[lang]
+    return {"tr":f"GCD({a},{b}) = {math.gcd(a,b)}", "en":f"GCD({a},{b}) = {math.gcd(a,b)}"}[lang]
+
+register(Command("gcd", ["ebob"], "Greatest common divisor / EBOB.", lambda a, l: cmd_gcd(a, l)))
+
+# lcm
+register(Command("lcm", ["ekok"], "Least common multiple / EKOK.", lambda a, l: {"tr":f"LCM = {lcm(int(a[0]),int(a[1]))}" if len(a)>=2 else "Kullanım: lcm a b", "en":f"LCM = {lcm(int(a[0]),int(a[1]))}" if len(a)>=2 else "Usage: lcm a b"}[l]))
+
+# factorial
+
+def cmd_fact(args, lang):
+    if not args:
+        return {"tr":"Kullanım: fact n", "en":"Usage: fact n"}[lang]
+    try:
+        n = int(args[0])
+        return {"tr":f"{n}! = {math.factorial(n)}", "en":f"{n}! = {math.factorial(n)}"}[lang]
+    except Exception as e:
+        return {"tr":"Hata: "+str(e), "en":"Error: "+str(e)}[lang]
+
+register(Command("fact", ["faktoriyel"], "Factorial / Faktöriyel.", lambda a, l: cmd_fact(a, l)))
+
+# isprime
+
+def cmd_isprime(args, lang):
+    if not args: return {"tr":"Kullanım: isprime n", "en":"Usage: isprime n"}[lang]
+    try:
+        n = int(args[0])
+        return {"tr":f"{n} asal mı? {'Evet' if is_prime(n) else 'Hayır'}", "en":f"Is {n} prime? {'Yes' if is_prime(n) else 'No'}"}[lang]
+    except Exception as e:
+        return {"tr":"Hata: "+str(e), "en":"Error: "+str(e)}[lang]
+
+register(Command("isprime", ["asalmi", "asal mı"], "Check primality / Asal mı?", lambda a, l: cmd_isprime(a, l)))
+
+# -------------------------
+# 500 otomatik komut
+# -------------------------
+
+def make_simple_handler(i):
+    def handler(args, lang):
+        if i <= 100:
+            return {"tr": f"Selam! (komut {i})", "en": f"Hello! (command {i})"}[lang]
+        if 101 <= i <= 200:
+            if args:
+                try:
+                    n = float(args[0])
+                    return {"tr": f"{n} * {i} = {n * i}", "en": f"{n} * {i} = {n * i}"}[lang]
+                except:
+                    return {"tr":"Lütfen sayı verin", "en":"Please give a number"}[lang]
+            return {"tr":f"Bu komut {i}: verilen sayıyı {i} ile çarpar.", "en":f"This command {i}: multiplies given number by {i}."}[lang]
+        if 201 <= i <= 300:
+            if args:
+                s = " ".join(args)
+                if i % 3 == 0:
+                    return {"tr": s.upper(), "en": s.upper()}[lang]
+                if i % 3 == 1:
+                    return {"tr": s[::-1], "en": s[::-1]}[lang]
+                return {"tr": s.title(), "en": s.title()}[lang]
+            return {"tr":"Veri yok: bir şey yazın.", "en":"No input: provide a string."}[lang]
+        if 301 <= i <= 380:
+            if args and len(args) >= 2:
+                try:
+                    val = float(args[0])
+                    typ = args[1].lower()
+                    if typ in ("cm","centimeter"):
+                        return {"tr":f"{val} cm = {val/100} m", "en":f"{val} cm = {val/100} m"}[lang]
+                    if typ in ("km","kilometer"):
+                        return {"tr":f"{val} km = {val*0.621371} mi", "en":f"{val} km = {val*0.621371} mi"}[lang]
+                    if typ in ("c","celsius"):
+                        return {"tr":f"{val}°C = {val*9/5+32}°F", "en":f"{val}°C = {val*9/5+32}°F"}[lang]
+                    return {"tr":"Bilinmeyen tip", "en":"Unknown type"}[lang]
+                except:
+                    return {"tr":"Hata: sayı bekleniyordu", "en":"Error: expected a number"}[lang]
+            return {"tr":"Kullanım: komut <değer> <tip(cm/km/c) >", "en":"Usage: command <value> <type(cm/km/c)>"}[lang]
+        if 381 <= i <= 450:
+            if i % 2 == 0:
+                return {"tr":f"Rastgele sayı: {random.randint(0, i)}", "en":f"Random number: {random.randint(0, i)}"}[lang]
+            return {"tr":f"Kısa bilgi #{i}: Bu bir örnek bilgi.", "en":f"Fact #{i}: This is a sample fact."}[lang]
+        if args:
+            expr = " ".join(args)
+            try:
+                res = safe_eval(expr)
+                return {"tr":f"({i}) Hesaplama sonucu: {res}", "en":f"({i}) Calculation result: {res}"}[lang]
+            except Exception as e:
+                return {"tr":f"Hata: {e}", "en":f"Error: {e}"}[lang]
+        return {"tr":f"Komut {i}: math helper. Bir ifade verin.", "en":f"Command {i}: math helper. Provide an expression."}[lang]
+    return handler
+
+for i in range(1, 501):
+    name = f"cmd{i}"
+    aliases = [f"komut{i}", f"c{i}", f"k{i}"]
+    desc = f"Automated command #{i}"
+    register(Command(name, aliases, desc, make_simple_handler(i)))
+
+# -------------------------
+# Dil algılama ve dispatch
+# -------------------------
+TURKISH_KEYWORDS = ["merhaba", "selam", "nasılsın", "hesapla", "kaç", "teşekkür", "sağol", "günaydın", "iyi akşamlar"]
+
+def detect_lang(text: str):
+    lower = text.lower()
+    for w in TURKISH_KEYWORDS:
+        if w in lower:
+            return "tr"
+    if re.search(r"\b(calc|help|time|ping|isprime|gcd|lcm|fact)\b", lower):
+        return "en"
+    return "tr" if re.search(r"[ığüşöçİĞÜŞÖÇ]", text) else "en"
+
+
+def parse_and_dispatch(text: str):
+    text = text.strip()
+    if not text:
+        return "..."
+    lang = detect_lang(text)
+    if text.startswith("/"):
+        text = text[1:]
+    parts = text.split()
+    cmd_token = parts[0].lower()
+    args = parts[1:]
+    cmd = COMMANDS.get(cmd_token)
+    if not cmd:
+        token_clean = re.sub(r"[^\wğüşöçıİĞÜŞÖÇ]", "", cmd_token)
+        cmd = COMMANDS.get(token_clean)
+    if not cmd:
+        if re.search(r"[0-9\.\+\-\*\/\^\(\)]", text):
+            return cmd_calc(parts if COMMANDS.get(parts[0]) else parts, lang)
+        return {"tr":"Bilinmeyen komut. help yazın.", "en":"Unknown command. Type help."}[lang]
+    try:
+        return cmd.handler(args, lang)
+    except Exception as e:
+        return {"tr":"Komut çalıştırma hatası: "+str(e), "en":"Command runtime error: "+str(e)}[lang]
+
+# -------------------------
+# GUI: Toplevel içine gömme
+# -------------------------
+class SarmaBotGUI:
+    def __init__(self, root):
+        self.root = root
+        root.title("SarmaBot Container")
+
+        # Ana pencerede bir butonla Toplevel açalım
+        open_btn = ttk.Button(root, text="Open SarmaBot (Toplevel)", command=self.open_toplevel)
+        open_btn.pack(padx=10, pady=10)
+
+        # Hemen toplevel açılmasını isterseniz uncomment:
+        # self.open_toplevel()
+
+    def open_toplevel(self):
+        # Eğer zaten açık bir toplevel varsa ona odaklan
+        if hasattr(self, 'top') and self.top.winfo_exists():
+            self.top.deiconify()
+            self.top.lift()
+            return
+
+        self.top = tk.Toplevel(self.root)
+        self.top.title("SarmaBot - Toplevel Chat")
+        self.top.geometry('700x500')
+
+        # Chat görüntüleme
+        self.chat_area = ScrolledText(self.top, wrap=tk.WORD, state=tk.DISABLED)
+        self.chat_area.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+
+        bottom_frame = ttk.Frame(self.top)
+        bottom_frame.pack(fill=tk.X, padx=6, pady=6)
+
+        self.entry = ttk.Entry(bottom_frame)
+        self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0,6))
+        self.entry.bind('<Return>', self.on_send)
+
+        send_btn = ttk.Button(bottom_frame, text="Gönder", command=self.on_send)
+        send_btn.pack(side=tk.RIGHT)
+
+        # başlangıç mesajı
+        self._append_bot("SarmaBot hazır. Yardım için 'help' veya 'yardim' yazın.")
+
+        # destroy handler
+        self.top.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        try:
+            self.top.destroy()
+        except:
+            pass
+
+    def _append_bot(self, text):
+        self.chat_area.config(state=tk.NORMAL)
+        self.chat_area.insert(tk.END, "SarmaBot: " + str(text) + "\n")
+        self.chat_area.see(tk.END)
+        self.chat_area.config(state=tk.DISABLED)
+
+    def _append_user(self, text):
+        self.chat_area.config(state=tk.NORMAL)
+        self.chat_area.insert(tk.END, "You: " + str(text) + "\n")
+        self.chat_area.see(tk.END)
+        self.chat_area.config(state=tk.DISABLED)
+
+    def on_send(self, event=None):
+        raw = self.entry.get().strip()
+        if not raw:
+            return
+        self._append_user(raw)
+        self.entry.delete(0, tk.END)
+
+        # çıkış kontrolü
+        if raw.lower() in ("çık","cık","exit","quit"):
+            self._append_bot("Görüşürüz.")
+            self.on_close()
+            return
+
+        out = parse_and_dispatch(raw)
+        if isinstance(out, dict):
+            lang = detect_lang(raw)
+            resp = out.get(lang, next(iter(out.values())))
+        else:
+            resp = out
+        self._append_bot(resp)
+
+
 def open_snake_game():
     import tkinter as tk
     from tkinter import messagebox
@@ -7605,37 +7970,309 @@ def open_update_center():
 #
 # Son.
 
+# btl_store_clean.py
+# Tek dosya. No defaults for ICONS_DIR. No DEFAULT_ICONS_DIR.
+# Call: btl_store()
+# Behaves: preserves existing btlstore.png; does not create icon folders or placeholder files.
+# Requires: tkinter, standard lib. Uses GitHub API for listing.
 
-# ---------- BTL Store ----------
-# Gerekli importlar (eğer zaten projende varsa sorun olmaz)
+import os
+import random
+import ssl
+import json
+import urllib.request
+import urllib.parse
+import ast
+import re
+import subprocess
+import tkinter as tk
+from tkinter import messagebox
 
-# Aşağıdaki isimler proje genelinde zaten tanımlıysa (senin orijinal kodda vardı)
-# open_notepad, open_snake_game, open_ball_game, open_maria_game, add_icon, ICONS_DIR, root
-# bunları globals() üzerinden alacağız; yoksa basit fallback sağlayacağız.
+# ensure root exists as global (don't override if user defined)
+try:
+    root  # noqa: F821
+except NameError:
+    root = tk.Tk()
+    root.withdraw()
 
+# -----------------------
+# GitHub listing & download
+# -----------------------
+def _normalize_repo_arg(repo_arg):
+    if repo_arg.startswith("http"):
+        parts = repo_arg.rstrip("/").split("/")
+        if len(parts) >= 2:
+            owner = parts[-2]
+            repo = parts[-1].replace(".git", "")
+            return f"{owner}/{repo}"
+    return repo_arg
 
+def _github_list_py_files(repo_arg, path="", token=None, user_agent="BTLStore/1.0"):
+    """
+    Returns list of items {name, path, download_url}
+    Uses GitHub API /contents. Raises on error.
+    """
+    repo_arg = _normalize_repo_arg(repo_arg)
+    if "/" not in repo_arg:
+        raise RuntimeError("Repo must be owner/repo or full URL.")
+    owner, repo = repo_arg.split("/", 1)
+    api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{urllib.parse.quote(path)}"
+    req = urllib.request.Request(api_url, headers={"User-Agent": user_agent})
+    if token:
+        req.add_header("Authorization", f"token {token}")
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+        data = resp.read().decode("utf-8")
+        items = json.loads(data)
+    results = []
+    if isinstance(items, dict) and items.get("type") == "file":
+        if items.get("name","").endswith(".py"):
+            results.append({"name": items["name"], "path": items["path"], "download_url": items.get("download_url")})
+    elif isinstance(items, list):
+        for it in items:
+            if it.get("type") == "file" and it.get("name","").endswith(".py"):
+                results.append({"name": it["name"], "path": it["path"], "download_url": it.get("download_url")})
+    return results
+
+def _download_raw(url, dest_path, token=None, user_agent="BTLStore/1.0"):
+    req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    if token:
+        req.add_header("Authorization", f"token {token}")
+    ctx = ssl.create_default_context()
+    with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+        data = resp.read()
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    with open(dest_path, "wb") as f:
+        f.write(data)
+    return dest_path
+
+# -----------------------
+# Static analysis (AST + regex)
+# -----------------------
+def _static_analyze_py(path):
+    """
+    Return list of tuples (type, message). Empty if clean-ish.
+    """
+    suspicious = []
+    try:
+        src = open(path, "r", encoding="utf-8", errors="ignore").read()
+    except Exception as e:
+        suspicious.append(("read_error", str(e)))
+        return suspicious
+
+    # quick regex patterns
+    regex_checks = {
+        r"rm\s+-rf": "shell rm -rf pattern",
+        r"shutil\.rmtree\s*\(": "shutil.rmtree call",
+        r"os\.remove\s*\(": "os.remove call",
+        r"subprocess\.Popen\s*\(": "subprocess.Popen call",
+        r"os\.system\s*\(": "os.system call",
+        r"exec\(": "exec() call",
+        r"eval\(": "eval() call",
+        r"open\s*\(.*['\"]/etc/": "opening /etc/*",
+    }
+    for pattern, label in regex_checks.items():
+        if re.search(pattern, src, flags=re.IGNORECASE):
+            suspicious.append(("regex", label))
+
+    # AST analysis
+    try:
+        tree = ast.parse(src, filename=path)
+        for node in ast.walk(tree):
+            # detect exec/eval/compile calls
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+                if node.func.id in ("exec", "eval", "compile", "execfile"):
+                    suspicious.append(("ast", f"calls {node.func.id}"))
+            # imports
+            if isinstance(node, ast.Import):
+                for n in node.names:
+                    nm = n.name
+                    if nm and any(d in nm for d in ("subprocess","os","shutil","socket","paramiko","ftplib","requests","urllib")):
+                        suspicious.append(("ast", f"imports {nm}"))
+            if isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                if any(d in mod for d in ("subprocess","os","shutil","socket","paramiko","ftplib","requests","urllib")):
+                    suspicious.append(("ast", f"from {mod} import ..."))
+            # attribute usage like os.system
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                if node.value.id in ("os","subprocess","shutil","socket","requests","urllib"):
+                    suspicious.append(("ast", f"attribute {node.value.id}.{node.attr}"))
+    except Exception as e:
+        suspicious.append(("ast_parse_error", str(e)))
+
+    # dedupe
+    seen = set()
+    dedup = []
+    for t,m in suspicious:
+        if (t,m) not in seen:
+            seen.add((t,m))
+            dedup.append((t,m))
+    return dedup
+
+# -----------------------
+# Simple CAPTCHA (math)
+# -----------------------
+def _ask_captcha(parent):
+    a = random.randint(2,9)
+    b = random.randint(2,9)
+    answer = a + b
+    dlg = tk.Toplevel(parent)
+    dlg.title("Doğrulama")
+    dlg.geometry("300x130")
+    tk.Label(dlg, text=f"Lütfen doğrulayın: {a} + {b} = ?").pack(pady=8)
+    var = tk.StringVar()
+    ent = tk.Entry(dlg, textvariable=var)
+    ent.pack()
+    ok = {"val": False}
+    def on_ok():
+        try:
+            if int(var.get()) == answer:
+                ok["val"] = True
+                dlg.destroy()
+            else:
+                messagebox.showerror("Hata", "Yanlış cevap.")
+        except Exception:
+            messagebox.showerror("Hata", "Geçerli bir sayı girin.")
+    tk.Button(dlg, text="Doğrula", command=on_ok).pack(pady=8)
+    dlg.transient(parent)
+    dlg.grab_set()
+    parent.wait_window(dlg)
+    return ok["val"]
+
+# -----------------------
+# subprocess runner
+# -----------------------
+def _run_subprocess(path):
+    try:
+        proc = subprocess.Popen([os.sys.executable, path])
+        return proc
+    except Exception as e:
+        raise
+
+# -----------------------
+# Integrated GitHub panel adder
+# -----------------------
+def _add_github_panel(win, dest_dir="btlgames_tmp"):
+    frame = tk.LabelFrame(win, text="GitHub -> .py files (listele, indir, çalıştır)", padx=6, pady=6)
+    frame.pack(fill="x", padx=8, pady=6)
+
+    top = tk.Frame(frame)
+    top.pack(fill="x")
+    tk.Label(top, text="Repo (owner/repo or URL):").grid(row=0, column=0, sticky="w")
+    repo_var = tk.StringVar(value="Xaef-BTL/BTLstore")
+    repo_entry = tk.Entry(top, textvariable=repo_var, width=36)
+    repo_entry.grid(row=0, column=1, padx=6, sticky="w")
+
+    tk.Label(top, text="Subfolder (optional):").grid(row=1, column=0, sticky="w")
+    path_var = tk.StringVar(value="games")
+    path_entry = tk.Entry(top, textvariable=path_var, width=20)
+    path_entry.grid(row=1, column=1, padx=6, sticky="w")
+
+    tk.Label(top, text="GitHub token (optional):").grid(row=2, column=0, sticky="w")
+    token_var = tk.StringVar(value="")
+    token_entry = tk.Entry(top, textvariable=token_var, width=36, show="*")
+    token_entry.grid(row=2, column=1, padx=6, sticky="w")
+
+    btn_frame = tk.Frame(frame)
+    btn_frame.pack(fill="x", pady=6)
+    listbox = tk.Listbox(frame, height=6)
+    listbox.pack(fill="both", padx=4, pady=4, expand=True)
+
+    files_meta = []
+
+    def do_list():
+        listbox.delete(0, "end")
+        files_meta.clear()
+        repo = repo_var.get().strip()
+        p = path_var.get().strip()
+        token = token_var.get().strip() or None
+        if not repo:
+            messagebox.showwarning("Hata", "Repo girin.")
+            return
+        try:
+            found = _github_list_py_files(repo, path=p, token=token)
+        except Exception as e:
+            messagebox.showerror("Listeleme Hatası", f"Listeleme başarısız: {e}")
+            return
+        if not found:
+            listbox.insert("end", "(no .py files found)")
+            return
+        for it in found:
+            files_meta.append(it)
+            listbox.insert("end", f"{it['path']}")
+
+    def on_download_and_run():
+        sel = listbox.curselection()
+        if not sel:
+            messagebox.showinfo("Seçim", "Önce bir dosya seçin.")
+            return
+        idx = sel[0]
+        meta = files_meta[idx]
+        repo = repo_var.get().strip()
+        token = token_var.get().strip() or None
+
+        # first CAPTCHA
+        if not _ask_captcha(win):
+            messagebox.showwarning("Doğrulama", "Doğrulama başarısız.")
+            return
+
+        # download target path
+        owner_repo = _normalize_repo_arg(repo)
+        dest_root = os.path.join(dest_dir, owner_repo.replace("/", "_"))
+        dest_path = os.path.join(dest_root, meta["path"].replace("/", os.sep))
+        try:
+            _download_raw(meta["download_url"], dest_path, token=token)
+        except Exception as e:
+            messagebox.showerror("İndirme Hatası", f"İndirme başarısız: {e}")
+            return
+
+        # static analysis
+        findings = _static_analyze_py(dest_path)
+        if findings:
+            txt = "\n".join([f"{t}: {m}" for t,m in findings])
+            proceed = messagebox.askyesno("Şüpheli içerik tespit edildi",
+                                          f"Aşağıdaki şüpheli kalıplar bulundu:\n\n{txt}\n\nDevam etmek istiyor musunuz? (tehlikeli olabilir!)")
+            if not proceed:
+                return
+
+        # final CAPTCHA
+        if not _ask_captcha(win):
+            messagebox.showwarning("Doğrulama", "Doğrulama başarısız.")
+            return
+
+        # run in subprocess
+        try:
+            proc = _run_subprocess(dest_path)
+            messagebox.showinfo("Başlatıldı", f"Oyun başlatıldı (PID {proc.pid}).")
+        except Exception as e:
+            messagebox.showerror("Çalıştırma Hatası", f"Oynatılırken hata: {e}")
+
+    tk.Button(btn_frame, text="Listele .py", command=do_list).pack(side="left", padx=6)
+    tk.Button(btn_frame, text="İndir ve Çalıştır", command=on_download_and_run).pack(side="left", padx=6)
+
+    return frame
+
+# -----------------------
+# Main btl_store (no params, uses global root)
+# -----------------------
 def btl_store():
-    win = Toplevel(root)
-    win.title("BTL Store — Mini Sürüm (çok az dram, bol eğlence)")
+    win = tk.Toplevel(root)
+    win.title("BTL Store")
     win.geometry("520x520")
     win.resizable(False, False)
 
-    # Helper: mevcut fonksiyonu al, yoksa fallback oluştur
+    # Helper get_callable as before: fallback small apps/games
     def get_callable(name, fallback_type="app"):
-        # name: string name of function in globals
         func = globals().get(name)
         if callable(func):
             return func
-        # Basit fallback uygulamalar / oyunlar
         if fallback_type == "game":
             def fallback_game():
-                gwin = Toplevel(win)
+                gwin = tk.Toplevel(win)
                 gwin.title(name)
                 gwin.geometry("350x200")
-                tk.Label(
-                    gwin, text=f"{name} - Bu oyunun gerçek versiyonu yok; bu fallback sürüm.").pack(pady=10)
+                tk.Label(gwin, text=f"{name} - fallback oyun.").pack(pady=10)
                 score = tk.IntVar(value=0)
-
                 def clicker():
                     score.set(score.get() + 1)
                     lbl.config(text=f"Skor: {score.get()}")
@@ -7646,261 +8283,94 @@ def btl_store():
             return fallback_game
         else:
             def fallback_app():
-                awin = Toplevel(win)
+                awin = tk.Toplevel(win)
                 awin.title(name)
                 awin.geometry("400x220")
-                tk.Label(
-                    awin,
-                    text=f"{name} açıldı — (fallback küçük uygulama)").pack(
-                    pady=12)
-                tk.Button(
-                    awin,
-                    text="Kapat",
-                    command=awin.destroy).pack(
-                    pady=8)
+                tk.Label(awin, text=f"{name} açıldı — fallback app").pack(pady=12)
+                tk.Button(awin, text="Kapat", command=awin.destroy).pack(pady=8)
             return fallback_app
 
-    # Mevcut fonksiyon isimleri (orijinal kodundan esinlenme)
-    open_notepad_func = globals().get("open_notepad") or get_callable(
-        "Not Defteri", fallback_type="app")
-    open_snake_func = globals().get("open_snake_game") or get_callable(
-        "Yılan Oyunu", fallback_type="game")
-    open_ball_func = globals().get("open_ball_game") or get_callable(
-        "Top Yakalama", fallback_type="game")
-    open_maria_func = globals().get("open_maria_game") or get_callable(
-        "Maria'yı Kurtar", fallback_type="game")
+    # minimal built-ins (use real ones from globals if present)
+    open_notepad_func = globals().get("open_notepad") or get_callable("Not Defteri", fallback_type="app")
+    open_snake_func = globals().get("open_snake_game") or get_callable("Yılan Oyunu", fallback_type="game")
+    open_ball_func = globals().get("open_ball_game") or get_callable("Top Yakalama", fallback_type="game")
 
-    # Yeni mini uygulama / oyun fonksiyonları (gerçek projen varsa bunları
-    # kaldırabilirsin)
-    def mini_calculator():
-        # Küçük hesap makinesi (basit)
-        calc = Toplevel(win)
-        calc.title("Mini Hesap Makinesi")
-        calc.geometry("260x200")
-        entry = tk.Entry(calc, justify="right")
-        entry.pack(fill="x", padx=8, pady=8)
-
-        def press(x):
-            entry.insert(tk.END, str(x))
-
-        def clear():
-            entry.delete(0, tk.END)
-
-        def ev():
-            try:
-                res = eval(entry.get())
-                entry.delete(0, tk.END)
-                entry.insert(0, str(res))
-            except Exception:
-                messagebox.showerror("Hata", "Geçersiz ifade.")
-        btns = [
-            ("7", lambda: press(7)), ("8", lambda: press(8)), ("9", lambda: press(9)),
-            ("4", lambda: press(4)), ("5", lambda: press(5)), ("6", lambda: press(6)),
-            ("1", lambda: press(1)), ("2", lambda: press(2)), ("3", lambda: press(3)),
-            ("0", lambda: press(0)), (".", lambda: press(".")), ("=", ev)
-        ]
-        frm = tk.Frame(calc)
-        frm.pack()
-        for i, (t, cmd) in enumerate(btns):
-            tk.Button(
-                frm,
-                text=t,
-                width=6,
-                command=cmd).grid(
-                row=i //
-                3,
-                column=i %
-                3,
-                padx=2,
-                pady=2)
-        tk.Button(calc, text="C", command=clear).pack(pady=6)
-
-    def mini_timer():
-        twin = Toplevel(win)
-        twin.title("Mini Zamanlayıcı")
-        twin.geometry("300x140")
-        tk.Label(twin, text="Saniye cinsinden süre gir:").pack(pady=6)
-        ent = tk.Entry(twin)
-        ent.pack()
-        lbl = tk.Label(twin, text="")
-        lbl.pack(pady=6)
-
-        def start():
-            try:
-                s = int(ent.get())
-            except BaseException:
-                messagebox.showerror("Hata", "Sayı gir.")
-                return
-
-            def tick(rem):
-                if rem <= 0:
-                    messagebox.showinfo("Bitti", "Zaman doldu!")
-                    lbl.config(text="Bitti")
-                else:
-                    lbl.config(text=f"Kalan: {rem}s")
-                    twin.after(1000, tick, rem - 1)
-            tick(s)
-        tk.Button(twin, text="Başlat", command=start).pack()
-
-    def mini_memo():
-        mwin = Toplevel(win)
-        mwin.title("Mini Notlar")
-        mwin.geometry("420x260")
-        txt = tk.Text(mwin, height=10)
-        txt.pack(fill="both", expand=True, padx=8, pady=8)
-
-        def save():
-            path = os.path.join(os.getcwd(), "mini_memo.txt")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(txt.get("1.0", tk.END))
-            messagebox.showinfo("Kaydedildi",
-                                f"mini_memo.txt olarak kaydedildi: {path}")
-        tk.Button(mwin, text="Kaydet", command=save).pack(pady=4)
-
-    # Mağaza içeriği: kategorilere ayırdım
-    mini_games = {
-        "Yılan Oyunu": open_snake_func,
-        "Top Yakalama": open_ball_func,
-        "Maria'yı Kurtar": open_maria_func,
-        "Hızlı Tıkçı (Clicker)": lambda: get_callable(
-            "Hızlı Tıkçı",
-            fallback_type="game")()}
-    mini_apps = {
-        "Not Defteri": open_notepad_func,
-        "Mini Hesap Makinesi": mini_calculator,
-        "Mini Zamanlayıcı": mini_timer,
-        "Mini Notlar": mini_memo
-    }
-
-    # Install helper (simüle edilmiş "indir" süreci)
-    def install_app(name, func, deletable=True):
-        # add_icon fonksiyonun zaten projede olduğunu varsayıyoruz.
-        if "add_icon" in globals():
-            add_icon(
-                random.randint(
-                    50, 700), random.randint(
-                    100, 500), os.path.join(
-                    ICONS_DIR, "game.png"), name, func, deletable=deletable)
-            messagebox.showinfo("BTL Store",
-                                f"{name} indirildi ve masaüstüne eklendi!")
-        else:
-            # Eğer add_icon yoksa, direkt fonksiyonu aç
-            messagebox.showinfo(
-                "BTL Store",
-                f"{name} (simülasyon) indirildi — add_icon yok.")
-            try:
-                func()
-            except Exception as e:
-                messagebox.showerror("Hata", f"{name} başlatılamadı:\n{e}")
-
-    # UI: Arama + iki liste (oyunlar / uygulamalar) + info panel
+    # UI: simple top search + body
     top_frame = tk.Frame(win)
     top_frame.pack(fill="x", padx=8, pady=6)
     tk.Label(top_frame, text="Ara:").pack(side="left")
-    search_var = StringVar()
+    search_var = tk.StringVar()
     search_entry = tk.Entry(top_frame, textvariable=search_var)
     search_entry.pack(side="left", fill="x", expand=True, padx=6)
 
     body = tk.Frame(win)
     body.pack(fill="both", expand=True, padx=8, pady=4)
 
-    # Sol: oyunlar, Sağ: uygulamalar
-    left = tk.LabelFrame(body, text="Mini Oyunlar", width=240, height=380)
+    left = tk.LabelFrame(body, text="Mini Oyunlar")
     left.pack(side="left", fill="both", expand=True, padx=4)
-    right = tk.LabelFrame(body, text="Mini Uygulamalar", width=260, height=380)
+    right = tk.LabelFrame(body, text="Mini Uygulamalar")
     right.pack(side="left", fill="both", expand=True, padx=4)
 
-    # İçerikleri dinamik oluştur
+    # example lists
+    mini_games = {
+        "Yılan Oyunu": open_snake_func,
+        "Top Yakalama": open_ball_func,
+    }
+    mini_apps = {
+        "Not Defteri": open_notepad_func,
+    }
+
     def populate_lists(filter_text=""):
-        # temizle
-        for w in left.winfo_children():
-            w.destroy()
-        for w in right.winfo_children():
-            w.destroy()
-
-        # Mini oyunlar
+        for w in left.winfo_children(): w.destroy()
+        for w in right.winfo_children(): w.destroy()
         for name, func in mini_games.items():
-            if filter_text and filter_text.lower() not in name.lower():
-                continue
-            frm = tk.Frame(left)
-            frm.pack(fill="x", pady=3, padx=4)
+            if filter_text and filter_text.lower() not in name.lower(): continue
+            frm = tk.Frame(left); frm.pack(fill="x", pady=3, padx=4)
             tk.Label(frm, text=name).pack(side="left", anchor="w")
-            tk.Button(
-                frm,
-                text="▶ Oyna",
-                command=lambda f=func: f()).pack(
-                side="right",
-                padx=2)
-            tk.Button(
-                frm,
-                text="📥 İndir",
-                command=lambda n=name,
-                f=func: install_app(
-                    n,
-                    f,
-                    deletable=True)).pack(
-                side="right")
-
-        # Mini uygulamalar
+            tk.Button(frm, text="▶ Oyna", command=lambda f=func: f()).pack(side="right", padx=2)
+            tk.Button(frm, text="📥 İndir", command=lambda n=name, f=func: messagebox.showinfo("İndir", f"{n} indirildi (sim).")).pack(side="right")
         for name, func in mini_apps.items():
-            if filter_text and filter_text.lower() not in name.lower():
-                continue
-            frm = tk.Frame(right)
-            frm.pack(fill="x", pady=3, padx=4)
+            if filter_text and filter_text.lower() not in name.lower(): continue
+            frm = tk.Frame(right); frm.pack(fill="x", pady=3, padx=4)
             tk.Label(frm, text=name).pack(side="left", anchor="w")
-            tk.Button(
-                frm,
-                text="Aç",
-                command=lambda f=func: f()).pack(
-                side="right",
-                padx=2)
-            tk.Button(
-                frm,
-                text="📥 İndir",
-                command=lambda n=name,
-                f=func: install_app(
-                    n,
-                    f,
-                    deletable=True)).pack(
-                side="right")
+            tk.Button(frm, text="Aç", command=lambda f=func: f()).pack(side="right", padx=2)
+            tk.Button(frm, text="📥 İndir", command=lambda n=name, f=func: messagebox.showinfo("İndir", f"{n} indirildi (sim).")).pack(side="right")
 
-    # Arama etkileşimi
-    def on_search_var(*_):
-        populate_lists(search_var.get())
+    try:
+        search_var.trace_add("write", lambda *_: populate_lists(search_var.get()))
+    except Exception:
+        search_var.trace("w", lambda *_: populate_lists(search_var.get()))
 
-    search_var.trace_add("write", on_search_var)
-
-    # İlk dolum
     populate_lists("")
 
-    # Alt kısım: hızlı öneriler ve kapatma
+    # add GitHub panel (exactly the feature you asked)
+    _add_github_panel(win, dest_dir="btlgames_tmp")
+
     bottom = tk.Frame(win)
     bottom.pack(fill="x", padx=8, pady=8)
-    tk.Label(bottom, text="Hızlı Öneri:").pack(side="left")
-    tk.Button(bottom, text="Hepsini İndir (şaka yok)", command=lambda: [install_app(
-        n, f) for n, f in {**mini_games, **mini_apps}.items()]).pack(side="left", padx=6)
     tk.Button(bottom, text="Kapat", command=win.destroy).pack(side="right")
 
+    # add_icon behavior: only if both add_icon and ICONS_DIR exist in globals — NO creation, NO deletion
+    if "add_icon" in globals() and "ICONS_DIR" in globals() and callable(globals().get("add_icon")):
+        try:
+            # prefer project btlstore.png if present
+            project_png = os.path.join(os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd(), "btlstore.png")
+            chosen_icon = None
+            if os.path.exists(project_png):
+                chosen_icon = project_png
+            else:
+                alt = os.path.join(globals()["ICONS_DIR"], "btlstore.png")
+                if os.path.exists(alt):
+                    chosen_icon = alt
+            if chosen_icon:
+                try:
+                    globals()["add_icon"](1050, 50, chosen_icon, "BTL Store", btl_store, deletable=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-# Mağaza simgesini masaüstüne ekle (orijinal kodunun davranışını koruyoruz)
-if "add_icon" in globals() and "ICONS_DIR" in globals():
-    add_icon(
-        1050,
-        50,
-        os.path.join(
-            ICONS_DIR,
-            "btlstore.png"),
-        "BTL Store",
-        btl_store,
-        deletable=True)
-else:
-    # Eğer proje global'lerinde yoksa, sadece root'a bind edelim (isteğe bağlı)
-    try:
-        # root varsa menüye ekleme, yoksa sessizce geç
-        if "root" in globals():
-            root.after(100, lambda: None)
-    except BaseException:
-        pass
+# end of file
 
 # ---------- Paint uygulaması ----------
 
@@ -10010,16 +10480,6 @@ add_icon(
     "Ayarlar",
     open_settings,
     deletable=False)
-add_icon(
-    50,
-    150,
-    os.path.join(
-        ICONS_DIR,
-        "winamp.jpg"),
-    "WinAMP",
-    open_winamp,
-    deletable=False)
-
 add_icon(
     1250,
     50,
