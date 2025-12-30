@@ -7969,12 +7969,10 @@ def open_update_center():
 # root.mainloop()
 #
 # Son.
-
-# btl_store_clean.py
-# Tek dosya. No defaults for ICONS_DIR. No DEFAULT_ICONS_DIR.
-# Call: btl_store()
-# Behaves: preserves existing btlstore.png; does not create icon folders or placeholder files.
-# Requires: tkinter, standard lib. Uses GitHub API for listing.
+# btl_store_clean_modified.py
+# add_icon ile ilgili her şey kaldırıldı.
+# "İndir" butonları artık gerçek dosya oluşturur ve oyun çalıştırılır (games/ klasörü).
+# Not: Güvenlik için statik analiz ve CAPTCHA korunmuştur.
 
 import os
 import random
@@ -8143,16 +8141,74 @@ def _ask_captcha(parent):
 # subprocess runner
 # -----------------------
 def _run_subprocess(path):
+    """Start the given Python script as a detached background process so its GUI
+    window can appear without us popping up confirmation message boxes.
+    On Windows we use DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP; on Unix-like
+    systems we use start_new_session=True.
+    Returns the Popen object (or raises on error).
+    """
     try:
-        proc = subprocess.Popen([os.sys.executable, path])
+        if os.name == 'nt':
+            # Windows: detach so no console/messagebox blocks the user
+            DETACHED_PROCESS = 0x00000008
+            CREATE_NEW_PROCESS_GROUP = 0x00000200
+            proc = subprocess.Popen([os.sys.executable, path],
+                                    creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+                                    close_fds=True)
+        else:
+            # Unix-like: start a new session to detach from this process
+            proc = subprocess.Popen([os.sys.executable, path],
+                                    start_new_session=True,
+                                    close_fds=True)
         return proc
     except Exception as e:
+        # propagate so caller can show an error if desired
         raise
+
+# -----------------------
+# helper: save simple fallback script into games/ and return path
+# -----------------------
+def _safe_filename(name):
+    return re.sub(r'[^0-9A-Za-z_.-]', '_', name)
+
+def _save_fallback_game_script(name, games_dir='games'):
+    os.makedirs(games_dir, exist_ok=True)
+    fname = _safe_filename(name) + '.py'
+    dest = os.path.join(games_dir, fname)
+    # simple standalone fallback game (a clicker) so it actually runs when started
+    script = f'''#!/usr/bin/env python3
+import tkinter as tk
+
+root = tk.Tk()
+root.title("{name}")
+root.geometry("360x200")
+score = tk.IntVar(value=0)
+
+lbl = tk.Label(root, text=f"Skor: {{score.get()}}")
+lbl.pack(pady=10)
+
+def click():
+    score.set(score.get() + 1)
+    lbl.config(text=f"Skor: {{score.get()}}")
+
+btn = tk.Button(root, text="Tıkla!", command=click)
+btn.pack(pady=8)
+
+root.mainloop()
+'''
+    with open(dest, 'w', encoding='utf-8') as f:
+        f.write(script)
+    # make executable bit if on unix-like
+    try:
+        os.chmod(dest, 0o755)
+    except Exception:
+        pass
+    return dest
 
 # -----------------------
 # Integrated GitHub panel adder
 # -----------------------
-def _add_github_panel(win, dest_dir="btlgames_tmp"):
+def _add_github_panel(win, dest_dir="games"):
     frame = tk.LabelFrame(win, text="GitHub -> .py files (listele, indir, çalıştır)", padx=6, pady=6)
     frame.pack(fill="x", padx=8, pady=6)
 
@@ -8216,7 +8272,7 @@ def _add_github_panel(win, dest_dir="btlgames_tmp"):
             messagebox.showwarning("Doğrulama", "Doğrulama başarısız.")
             return
 
-        # download target path
+        # download target path -> save under games/<owner_repo>/...
         owner_repo = _normalize_repo_arg(repo)
         dest_root = os.path.join(dest_dir, owner_repo.replace("/", "_"))
         dest_path = os.path.join(dest_root, meta["path"].replace("/", os.sep))
@@ -8240,10 +8296,11 @@ def _add_github_panel(win, dest_dir="btlgames_tmp"):
             messagebox.showwarning("Doğrulama", "Doğrulama başarısız.")
             return
 
-        # run in subprocess
+        # run in subprocess (actual run). No message box on success: the game will open directly.
         try:
             proc = _run_subprocess(dest_path)
-            messagebox.showinfo("Başlatıldı", f"Oyun başlatıldı (PID {proc.pid}).")
+            # oyun başlatıldı — hiçbir bilgi kutusu gösterilmiyor; pencere doğrudan açılacak
+            return
         except Exception as e:
             messagebox.showerror("Çalıştırma Hatası", f"Oynatılırken hata: {e}")
 
@@ -8328,13 +8385,26 @@ def btl_store():
             frm = tk.Frame(left); frm.pack(fill="x", pady=3, padx=4)
             tk.Label(frm, text=name).pack(side="left", anchor="w")
             tk.Button(frm, text="▶ Oyna", command=lambda f=func: f()).pack(side="right", padx=2)
-            tk.Button(frm, text="📥 İndir", command=lambda n=name, f=func: messagebox.showinfo("İndir", f"{n} indirildi (sim).")).pack(side="right")
+            # İndir: kaydet gerçek bir script olarak games/<name>.py ve çalıştır
+            def do_save_and_run(n=name):
+                try:
+                    dest = _save_fallback_game_script(n, games_dir='games')
+                    _run_subprocess(dest)
+                except Exception as e:
+                    messagebox.showerror("Hata", f"Kaydetme/Çalıştırma hatası: {e}")
+            tk.Button(frm, text="İndir", command=lambda n=name: do_save_and_run(n)).pack(side="right")
         for name, func in mini_apps.items():
             if filter_text and filter_text.lower() not in name.lower(): continue
             frm = tk.Frame(right); frm.pack(fill="x", pady=3, padx=4)
             tk.Label(frm, text=name).pack(side="left", anchor="w")
             tk.Button(frm, text="Aç", command=lambda f=func: f()).pack(side="right", padx=2)
-            tk.Button(frm, text="📥 İndir", command=lambda n=name, f=func: messagebox.showinfo("İndir", f"{n} indirildi (sim).")).pack(side="right")
+            def do_save_app_and_run(n=name):
+                try:
+                    dest = _save_fallback_game_script(n, games_dir='games')
+                    _run_subprocess(dest)
+                except Exception as e:
+                    messagebox.showerror("Hata", f"Kaydetme/Çalıştırma hatası: {e}")
+            tk.Button(frm, text="İndir", command=lambda n=name: do_save_app_and_run(n)).pack(side="right")
 
     try:
         search_var.trace_add("write", lambda *_: populate_lists(search_var.get()))
@@ -8343,32 +8413,12 @@ def btl_store():
 
     populate_lists("")
 
-    # add GitHub panel (exactly the feature you asked)
-    _add_github_panel(win, dest_dir="btlgames_tmp")
+    # add GitHub panel (saves into games/ by default)
+    _add_github_panel(win, dest_dir="games")
 
     bottom = tk.Frame(win)
     bottom.pack(fill="x", padx=8, pady=8)
     tk.Button(bottom, text="Kapat", command=win.destroy).pack(side="right")
-
-    # add_icon behavior: only if both add_icon and ICONS_DIR exist in globals — NO creation, NO deletion
-    if "add_icon" in globals() and "ICONS_DIR" in globals() and callable(globals().get("add_icon")):
-        try:
-            # prefer project btlstore.png if present
-            project_png = os.path.join(os.path.abspath(os.path.dirname(__file__)) if "__file__" in globals() else os.getcwd(), "btlstore.png")
-            chosen_icon = None
-            if os.path.exists(project_png):
-                chosen_icon = project_png
-            else:
-                alt = os.path.join(globals()["ICONS_DIR"], "btlstore.png")
-                if os.path.exists(alt):
-                    chosen_icon = alt
-            if chosen_icon:
-                try:
-                    globals()["add_icon"](1050, 50, chosen_icon, "BTL Store", btl_store, deletable=True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
 
 # end of file
 
@@ -10493,6 +10543,17 @@ add_icon(
 # Media Player icon
 add_icon(1150, 50, os.path.join(ICONS_DIR, "mediaplayer.png"),
          "BTL Media Player", open_media_player, deletable=False)
+
+add_icon(
+        1050,
+        50,
+        os.path.join(
+            ICONS_DIR,
+            "btlstore.png"),
+        "BTL Store",
+        btl_store,
+        deletable=True)
+
 
 # ---------- Wi-Fi & Battery simgeleri ----------
 
